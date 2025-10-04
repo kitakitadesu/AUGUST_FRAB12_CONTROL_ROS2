@@ -4,7 +4,7 @@ This directory contains all the convenience scripts for building, testing, launc
 
 ## Overview
 
-The scripts provide a comprehensive development and deployment workflow for the ROS2-based bocchi robot controller with WebSocket communication.
+The scripts provide a comprehensive development and deployment workflow for the ROS2-based bocchi robot controller with Socket.IO communication.
 
 ## Quick Start
 
@@ -68,7 +68,7 @@ Builds the bocchi ROS2 package with proper environment setup.
 ### 🧪 Testing
 
 #### `test.sh` - Comprehensive Test Runner
-Runs the complete WebSocket test suite with detailed reporting.
+Runs the complete Socket.IO test suite with detailed reporting.
 
 **Features:**
 - ✅ Multiple test categories (unit, integration, security, performance)
@@ -87,7 +87,7 @@ Runs the complete WebSocket test suite with detailed reporting.
 - `--integration` / `-i` - Run integration tests only
 - `--security` / `-s` - Run security tests only
 - `--performance` / `-p` - Run performance tests only
-- `--websocket` / `-w` - Run WebSocket-specific tests only
+- `--socketio` / `-s` - Run Socket.IO-specific tests only
 - `--verbose` / `-v` - Enable verbose output
 - `--coverage` / `-c` - Generate test coverage report
 
@@ -114,7 +114,7 @@ Starts the complete bocchi robot controller system with all services.
 
 **Services Started:**
 - ROS2 publisher node (robot control)
-- WebSocket server (port 8765)
+- Socket.IO server (integrated with Flask on port 8080)
 - REST API server (port 5000)
 - Web interface (port 8000)
 
@@ -184,7 +184,7 @@ Comprehensive system monitoring with health checks and performance metrics.
 - ✅ Real-time system resource monitoring
 - ✅ ROS2 process and topic monitoring
 - ✅ Service endpoint health checks
-- ✅ WebSocket connection testing
+- ✅ Socket.IO connection testing
 - ✅ Performance metrics collection
 - ✅ Health report generation
 - ✅ Continuous and one-shot monitoring
@@ -211,7 +211,7 @@ Comprehensive system monitoring with health checks and performance metrics.
 - 🖥️ System resources (CPU, memory, disk)
 - 🌐 Network services and ports
 - 🤖 ROS2 processes and topics
-- 🔗 Service endpoints (REST API, WebSocket)
+- 🔗 Service endpoints (REST API, Socket.IO)
 - 📊 Performance metrics
 - 📋 Log file analysis
 
@@ -287,7 +287,7 @@ Dedicated monitoring script for ROS2 topics with detailed information about publ
 ### Ports Used
 - **5000** - REST API server
 - **8000** - Web interface
-- **8765** - WebSocket server
+- **8080** - Socket.IO server (integrated with Flask)
 
 ### ROS2 Topics
 - `/cmd_vel` - Robot movement commands (geometry_msgs/Twist)
@@ -295,7 +295,7 @@ Dedicated monitoring script for ROS2 topics with detailed information about publ
 
 ### Key Components
 - **Publisher Node** - Main ROS2 node for robot control
-- **WebSocket Server** - Real-time bidirectional communication
+- **Socket.IO Server** - Real-time bidirectional communication with automatic reconnection
 - **REST API** - HTTP endpoints for web interface
 - **Web Interface** - User control interface
 
@@ -435,7 +435,7 @@ source install/setup.bash
 
 ### Python Dependencies
 - `rclpy` - ROS2 Python client
-- `websockets` - WebSocket server/client
+- `python-socketio` - Socket.IO server/client
 - `flask` - Web framework
 - `pytest` - Testing framework
 - `black` - Code formatter (dev)
