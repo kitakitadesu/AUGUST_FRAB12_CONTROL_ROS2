@@ -42,40 +42,43 @@ This node publishes to two topics for robot control:
    - `ros2 topic echo /cmd_vel`
    - `ros2 topic echo /servo_position`
 
-## WebSocket Keyboard Control
+## Socket.IO Keyboard Control
 
-The system now supports real-time keyboard control via WebSocket for improved responsiveness:
+The system now supports real-time keyboard control via Socket.IO for improved responsiveness:
 
 ### Features
-- **Real-time control**: Lower latency than REST API
-- **Automatic fallback**: Falls back to REST API if WebSocket unavailable  
+- **Real-time control**: Lower latency than REST API with automatic reconnection
+- **Automatic fallback**: Falls back to REST API if Socket.IO unavailable  
 - **Connection status**: Visual indicator shows current input mode
 - **Simultaneous keys**: Support for multiple key combinations
 - **Debouncing**: Prevents duplicate commands from rapid key presses
 
-### WebSocket Endpoints
-- **WebSocket Server**: `ws://localhost:8765` (or `ws://<your-ip>:8765`)
-- **Message Types**:
+### Socket.IO Endpoints
+- **Socket.IO Server**: `http://localhost:8080` (or `http://<your-ip>:8080`)
+- **Event Types**:
   - `key_down`: Key press event
   - `key_up`: Key release event
   - `keyboard`: Legacy key event with held state
+  - `get_status`: Request server status
+  - `test_connection`: Test connection latency
 
-### Message Format
-```json
+### Event Format
+```javascript
+// Event: 'key_down'
+// Data:
 {
-  "type": "key_down",
-  "key": "W",
+  "key": "w",
   "key_code": 87,
   "timestamp": 1640995200000
 }
 ```
 
-### Testing WebSocket Control
-Use the included test script:
+### Testing Socket.IO Control
+Use the web interface directly or connect using Socket.IO client libraries:
 ```bash
-# Run automated tests
-python3 test_websocket_keyboard.py
+# Open web interface
+http://localhost:8080
 
-# Interactive mode
-python3 test_websocket_keyboard.py --interactive
+# Test with Socket.IO client library
+# Events: 'key_down', 'key_up', 'get_status', 'test_connection'
 ```
