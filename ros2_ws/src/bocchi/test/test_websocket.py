@@ -13,14 +13,15 @@ import os
 # Add the bocchi package to the path for testing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from bocchi.publisher import WebSocketManager, KeyStateManager
+from bocchi.publisher import SocketIOManager, KeyStateManager
 
 class TestWebSocketManager(unittest.TestCase):
     """Test WebSocket manager functionality"""
-    
+
     def setUp(self):
         """Set up test fixtures"""
-        self.ws_manager = WebSocketManager()
+        self.mock_sio = Mock()
+        self.ws_manager = SocketIOManager(self.mock_sio)
         
     def test_websocket_manager_initialization(self):
         """Test WebSocketManager initializes correctly"""
@@ -29,87 +30,72 @@ class TestWebSocketManager(unittest.TestCase):
         
     def test_add_client(self):
         """Test adding WebSocket clients"""
-        mock_websocket1 = Mock()
-        mock_websocket2 = Mock()
-        
-        self.ws_manager.add_client(mock_websocket1)
+        mock_client1 = "client1"
+        mock_client2 = "client2"
+
+        self.ws_manager.add_client(mock_client1)
         self.assertEqual(len(self.ws_manager.connected_clients), 1)
-        self.assertIn(mock_websocket1, self.ws_manager.connected_clients)
-        
-        self.ws_manager.add_client(mock_websocket2)
+        self.assertIn(mock_client1, self.ws_manager.connected_clients)
+
+        self.ws_manager.add_client(mock_client2)
         self.assertEqual(len(self.ws_manager.connected_clients), 2)
-        self.assertIn(mock_websocket2, self.ws_manager.connected_clients)
+        self.assertIn(mock_client2, self.ws_manager.connected_clients)
         
     def test_remove_client(self):
         """Test removing WebSocket clients"""
-        mock_websocket = Mock()
-        
+        mock_client = "client1"
+
         # Add client first
-        self.ws_manager.add_client(mock_websocket)
+        self.ws_manager.add_client(mock_client)
         self.assertEqual(len(self.ws_manager.connected_clients), 1)
-        
+
         # Remove client
-        self.ws_manager.remove_client(mock_websocket)
+        self.ws_manager.remove_client(mock_client)
         self.assertEqual(len(self.ws_manager.connected_clients), 0)
-        self.assertNotIn(mock_websocket, self.ws_manager.connected_clients)
-        
+        self.assertNotIn(mock_client, self.ws_manager.connected_clients)
+
         # Removing non-existent client should not cause error
-        self.ws_manager.remove_client(mock_websocket)
+        self.ws_manager.remove_client(mock_client)
         self.assertEqual(len(self.ws_manager.connected_clients), 0)
         
-    async def test_broadcast_empty_clients(self):
+    def test_broadcast_empty_clients(self):
         """Test broadcasting with no connected clients"""
         message = {'type': 'test', 'data': 'hello'}
-        
+
         # Should not raise any exception
-        await self.ws_manager.broadcast(message)
+        result = self.ws_manager.broadcast('test_event', message)
+        self.assertEqual(result, 0)
         
-    async def test_broadcast_with_clients(self):
+    def test_broadcast_with_clients(self):
         """Test broadcasting to connected clients"""
-        mock_websocket1 = Mock()
-        mock_websocket2 = Mock()
-        
-        # Mock the send method to be async
-        async def mock_send(data):
-            pass
-        
-        mock_websocket1.send = Mock(side_effect=mock_send)
-        mock_websocket2.send = Mock(side_effect=mock_send)
-        
-        self.ws_manager.add_client(mock_websocket1)
-        self.ws_manager.add_client(mock_websocket2)
-        
+        mock_client1 = "client1"
+        mock_client2 = "client2"
+
+        self.ws_manager.add_client(mock_client1)
+        self.ws_manager.add_client(mock_client2)
+
         message = {'type': 'test', 'data': 'hello'}
-        await self.ws_manager.broadcast(message)
+        result = self.ws_manager.broadcast('test_event', message)
+
+        self.assertEqual(result, 2)
+        self.mock_sio.emit.assert_called_with('test_event', message)
         
-        expected_json = json.dumps(message)
-        mock_websocket1.send.assert_called_once_with(expected_json)
-        mock_websocket2.send.assert_called_once_with(expected_json)
-        
-    async def test_broadcast_with_disconnected_client(self):
+    def test_broadcast_with_disconnected_client(self):
         """Test broadcasting handles disconnected clients"""
-        mock_websocket1 = Mock()
-        mock_websocket2 = Mock()
-        
-        # Mock websocket1 to raise ConnectionClosed
-        async def mock_send_error(data):
-            raise websockets.exceptions.ConnectionClosed(None, None)
-        
-        async def mock_send_success(data):
-            pass
-        
-        mock_websocket1.send = Mock(side_effect=mock_send_error)
-        mock_websocket2.send = Mock(side_effect=mock_send_success)
-        
-        self.ws_manager.add_client(mock_websocket1)
-        self.ws_manager.add_client(mock_websocket2)
-        
+        mock_client1 = "client1"
+        mock_client2 = "client2"
+
+        # Mock sio.emit to raise exception
+        self.mock_sio.emit.side_effect = Exception("Connection error")
+
+        self.ws_manager.add_client(mock_client1)
+        self.ws_manager.add_client(mock_client2)
+
         message = {'type': 'test', 'data': 'hello'}
-        await self.ws_manager.broadcast(message)
-        
-        # Disconnected client should be removed
-        self.assertNotIn(mock_websocket1, self.ws_manager.connected_clients)
-        self.assertIn(mock_websocket2, self.ws_manager.connected_clients)
+        result = self.ws_manager.broadcast('test_event', message)
+
+        # Should return 0 since emit failed
+        self.assertEqual(result, 0)
 
 
 class TestKeyStateManagerWithWebSocket(unittest.TestCase):
@@ -359,15 +345,13 @@ class AsyncTestCase(unittest.TestCase):
 
 class TestAsyncWebSocketFunctionality(AsyncTestCase):
     """Async WebSocket functionality tests"""
-    
+
     def test_websocket_manager_broadcast(self):
         """Test WebSocket manager broadcast functionality"""
-        async def async_test():
-            ws_manager = WebSocketManager()
-            await ws_manager.broadcast({'type': 'test'})
-            # Should complete without error even with no clients
-            
-        self.run_async(async_test())
+        mock_sio = Mock()
+        ws_manager = SocketIOManager(mock_sio)
+        result = ws_manager.broadcast('test_event', {'type': 'test'})
+        self.assertEqual(result, 0)
         
     def test_websocket_connection_lifecycle(self):
         """Test WebSocket connection lifecycle"""
