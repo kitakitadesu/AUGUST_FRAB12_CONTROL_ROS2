@@ -1,21 +1,21 @@
-/* ROS2 Keyboard Interface JavaScript - WebSocket Only */
+/* ROS2 Keyboard Interface JavaScript - Socket.IO */
 
-class WebSocketKeyboardInterface {
+class SocketIOKeyboardInterface {
     constructor() {
-        this.websocket = null;
+        this.socket = null;
         this.connected = false;
         this.keysSentCount = 0;
         this.heldKeys = new Map();
         this.pendingRequests = new Map();
         this.requestId = 0;
         
-        // WebSocket configuration - optimized for fast connection
+        // Socket.IO configuration
         this.currentHost = window.location.hostname || 'localhost';
-        this.websocketUrl = `ws://${this.currentHost}:8765`;
-        this.reconnectDelay = 2000; // Reduced from 5000ms
-        this.maxReconnectAttempts = 15; // Increased attempts
+        this.socketUrl = window.location.origin;
+        this.reconnectDelay = 2000;
+        this.maxReconnectAttempts = 15;
         this.reconnectAttempts = 0;
-        this.connectionTimeout = 5000; // Add connection timeout
+        this.connectionTimeout = 5000;
         
         // Status tracking
         this.serverStatus = {
@@ -31,14 +31,14 @@ class WebSocketKeyboardInterface {
     init() {
         this.setupEventListeners();
         this.initializeInterface();
-        // Connect WebSocket immediately without waiting for window load
-        setTimeout(() => this.connectWebSocket(), 100);
+        // Connect Socket.IO immediately without waiting for window load
+        setTimeout(() => this.connectSocket(), 100);
     }
 
     initializeInterface() {
         // Initialize UI elements and status display
         this.updateConnectionMode();
-        this.addDebugMessage('Initializing WebSocket keyboard interface...');
+        this.addDebugMessage('Initializing Socket.IO keyboard interface...');
         
         // Set initial status
         this.updateStatus({
@@ -64,24 +64,24 @@ class WebSocketKeyboardInterface {
         // Page visibility for connection management
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && !this.connected) {
-                this.connectWebSocket();
+                this.connectSocket();
             }
         });
     }
 
     onWindowLoad() {
-        this.addDebugMessage('Page loaded, WebSocket already initializing...');
+        this.addDebugMessage('Page loaded, Socket.IO already initializing...');
         
         this.addDebugMessage(`Current host: ${this.currentHost}`);
-        this.addDebugMessage(`WebSocket URL: ${this.websocketUrl}`);
+        this.addDebugMessage(`Socket.IO URL: ${this.socketUrl}`);
         
         // Start periodic status updates once connected
         this.startStatusUpdates();
         
         // If not connected yet, try connecting again
-        if (!this.connected && (!this.websocket || this.websocket.readyState === WebSocket.CLOSED)) {
-            this.addDebugMessage('Page loaded but WebSocket not connected, attempting immediate connection...');
-            this.connectWebSocket();
+        if (!this.connected) {
+            this.addDebugMessage('Page loaded but Socket.IO not connected, attempting immediate connection...');
+            this.connectSocket();
         }
     }
 
@@ -89,17 +89,17 @@ class WebSocketKeyboardInterface {
         return ++this.requestId;
     }
 
-    async sendWebSocketMessage(message, expectResponse = false) {
+    async sendSocketMessage(event, data, expectResponse = false) {
         return new Promise((resolve, reject) => {
-            if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-                reject(new Error('WebSocket not connected'));
+            if (!this.socket || !this.connected) {
+                reject(new Error('Socket.IO not connected'));
                 return;
             }
 
             try {
                 if (expectResponse) {
                     const requestId = this.generateRequestId();
-                    message.request_id = requestId;
+                    data.request_id = requestId;
                     
                     // Store promise for response handling
                     this.pendingRequests.set(requestId, { resolve, reject });
@@ -113,7 +113,7 @@ class WebSocketKeyboardInterface {
                     }, 5000);
                 }
 
-                this.websocket.send(JSON.stringify(message));
+                this.socket.emit(event, data);
                 
                 if (!expectResponse) {
                     resolve(true);
@@ -126,10 +126,9 @@ class WebSocketKeyboardInterface {
 
     async testConnection() {
         try {
-            this.addDebugMessage('Testing WebSocket connection...');
+            this.addDebugMessage('Testing Socket.IO connection...');
             
-            const response = await this.sendWebSocketMessage({
-                type: 'test_connection',
+            const response = await this.sendSocketMessage('test_connection', {
                 timestamp: Date.now()
             }, true);
             
@@ -151,370 +150,317 @@ class WebSocketKeyboardInterface {
 
     async getStatus() {
         try {
-            const response = await this.sendWebSocketMessage({
-                type: 'get_status',
+            this.addDebugMessage('Sending status request to server...');
+            const response = await this.sendSocketMessage('get_status', {
                 timestamp: Date.now()
             }, true);
-            
-            if (response.success) {
-                this.serverStatus = response.data;
-                this.updateStats(response.data);
-                return response.data;
-            } else {
-                this.addDebugMessage(`Status error: ${response.error}`);
-                return null;
-            }
+
+            this.addDebugMessage(`Status response received: ${JSON.stringify(response)}`);
+
+            // Update status with the response data (server sends flat structure now)
+            this.updateStatus({
+                running: response.server_running,
+                connectedClients: response.connected_clients,
+                uptime: response.uptime,
+                version: response.version
+            });
+            return response;
         } catch (error) {
             this.addDebugMessage(`Status request error: ${error.message}`);
             return null;
         }
     }
 
-    async sendKey(key, keyCode, isHeld = false) {
+    async sendKey(key, keyCode) {
         try {
-            const response = await this.sendWebSocketMessage({
-                type: 'send_key',
+            const response = await this.sendSocketMessage('send_key', {
                 key: key,
                 key_code: keyCode,
-                is_held: isHeld,
                 timestamp: Date.now()
             }, true);
-
-            if (response.success || response.published) {
+            
+            if (response.success) {
                 this.keysSentCount++;
-                this.updateKeyDisplay(key, keyCode, true);
                 this.updateKeysSentDisplay();
-                this.addDebugMessage(`Key sent: '${key}' (${keyCode}) ${isHeld ? '[HELD]' : ''}`);
-                return true;
-            } else {
-                this.addDebugMessage(`Key send failed: ${response.error || 'Unknown error'}`);
-                return false;
+                this.addDebugMessage(`Key sent: ${key} (${keyCode})`);
             }
+            
+            return response;
         } catch (error) {
-            this.addDebugMessage(`Error sending key: ${error.message}`);
-            return false;
+            this.addDebugMessage(`Send key error: ${error.message}`);
+            return { success: false, error: error.message };
         }
     }
 
     async sendKeyBatch(keysInput) {
         try {
-            const response = await this.sendWebSocketMessage({
-                type: 'send_key_batch',
+            const response = await this.sendSocketMessage('send_key_batch', {
                 keys_input: keysInput,
                 timestamp: Date.now()
             }, true);
-
-            if (response.success) {
-                this.keysSentCount += response.processed_count;
-                this.updateKeysSentDisplay();
-                this.addDebugMessage(`Batch sent: ${response.processed_count} keys processed`);
-                return response;
-            } else {
-                this.addDebugMessage(`Batch send failed: ${response.error}`);
-                return response;
-            }
+            
+            return response;
         } catch (error) {
-            this.addDebugMessage(`Error sending key batch: ${error.message}`);
+            this.addDebugMessage(`Send key batch error: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
 
     handleKeyDown(event) {
-        event.preventDefault();
-
-        if (event.repeat) {
-            return;
+        const key = event.key.toLowerCase();
+        const keyCode = event.keyCode;
+        
+        // Prevent default for movement keys
+        if (['w', 'a', 's', 'd', 'f', 'l'].includes(key)) {
+            event.preventDefault();
         }
-
-        let key = event.key;
-        let keyCode = event.keyCode || event.which;
-
-        key = this.normalizeKeyName(key);
-
+        
         this.startKeyHold(key, keyCode);
     }
 
     handleKeyUp(event) {
-        event.preventDefault();
-
-        let keyCode = event.keyCode || event.which;
-        this.stopKeyHold(keyCode);
+        const key = event.key.toLowerCase();
+        this.stopKeyHold(key);
     }
 
     normalizeKeyName(key) {
         const keyMap = {
-            'ArrowUp': 'UP',
-            'ArrowDown': 'DOWN',
-            'ArrowLeft': 'LEFT',
-            'ArrowRight': 'RIGHT',
-            ' ': 'SPACE',
-            'Enter': 'ENTER',
-            'Escape': 'ESC',
-            'Backspace': 'BACKSPACE',
-            'Tab': 'TAB'
+            'arrowup': 'w',
+            'arrowdown': 's',
+            'arrowleft': 'a',
+            'arrowright': 'd'
         };
-        
-        return keyMap[key] || key;
+        return keyMap[key.toLowerCase()] || key.toLowerCase();
     }
 
     async startKeyHold(key, keyCode) {
-        if (this.heldKeys.has(keyCode)) {
-            return;
-        }
-
-        this.heldKeys.set(keyCode, { key, keyCode });
+        const normalizedKey = this.normalizeKeyName(key);
         
-        // Send key down via WebSocket
+        if (this.heldKeys.has(normalizedKey)) {
+            return; // Key already being held
+        }
+        
+        this.heldKeys.set(normalizedKey, true);
+        
         try {
-            await this.sendWebSocketMessage({
-                type: 'key_down',
-                key: key,
+            await this.sendSocketMessage('key_down', {
+                key: normalizedKey,
                 key_code: keyCode,
                 timestamp: Date.now()
             });
-
-            this.addDebugMessage(`Key hold started: '${key}' (${keyCode})`);
-            this.updateKeyDisplay(key, keyCode, true);
-            this.keysSentCount++;
-            this.updateKeysSentDisplay();
-        } catch (error) {
-            this.addDebugMessage(`Error starting key hold: ${error.message}`);
-        }
-    }
-
-    async stopKeyHold(keyCode) {
-        if (this.heldKeys.has(keyCode)) {
-            const keyInfo = this.heldKeys.get(keyCode);
-            this.heldKeys.delete(keyCode);
             
-            // Send key up via WebSocket
-            try {
-                await this.sendWebSocketMessage({
-                    type: 'key_up',
-                    key: keyInfo.key,
-                    key_code: keyCode,
-                    timestamp: Date.now()
-                });
-
-                this.addDebugMessage(`Key hold stopped: '${keyInfo.key}' (${keyCode})`);
-                this.updateKeyDisplay(keyInfo.key, keyCode, false);
-                
-                setTimeout(() => {
-                    const keyDisplay = document.getElementById('keyDisplay');
-                    if (keyDisplay && this.heldKeys.size === 0) {
-                        keyDisplay.innerHTML = '<p style="border: 2px solid #333; padding: 2rem; margin: 0.5rem 0; min-height: 4rem; display: flex; align-items: center; justify-content: center; text-align: center;"><strong>Press and hold any key...</strong></p>';
-                    }
-                }, 1000);
-            } catch (error) {
-                this.addDebugMessage(`Error stopping key hold: ${error.message}`);
-            }
+            this.updateKeyDisplay();
+        } catch (error) {
+            this.addDebugMessage(`Key down error: ${error.message}`);
         }
     }
 
-    connectWebSocket() {
-        // Close existing connection if any
-        if (this.websocket && this.websocket.readyState !== WebSocket.CLOSED) {
-            if (this.websocket.readyState === WebSocket.CONNECTING) {
-                this.addDebugMessage('WebSocket already connecting, skipping...');
-                return;
-            }
-            this.websocket.close();
+    async stopKeyHold(key) {
+        const normalizedKey = this.normalizeKeyName(key);
+        
+        if (!this.heldKeys.has(normalizedKey)) {
+            return; // Key not being held
+        }
+        
+        this.heldKeys.delete(normalizedKey);
+        
+        try {
+            await this.sendSocketMessage('key_up', {
+                key: normalizedKey,
+                timestamp: Date.now()
+            });
+            
+            this.updateKeyDisplay();
+        } catch (error) {
+            this.addDebugMessage(`Key up error: ${error.message}`);
+        }
+    }
+
+    connectSocket() {
+        if (this.socket && this.connected) {
+            return; // Already connected
         }
 
         try {
-            this.addDebugMessage(`🔌 Connecting to WebSocket: ${this.websocketUrl}`);
-            this.websocket = new WebSocket(this.websocketUrl);
+            this.addDebugMessage(`Connecting to Socket.IO server at ${this.socketUrl}...`);
             
-            // Add connection timeout
-            const connectionTimer = setTimeout(() => {
-                if (this.websocket && this.websocket.readyState === WebSocket.CONNECTING) {
-                    this.addDebugMessage('⏰ WebSocket connection timeout, closing and retrying...');
-                    this.websocket.close();
-                }
-            }, this.connectionTimeout);
+            // Ensure Socket.IO library is loaded
+            if (typeof io === 'undefined') {
+                this.addDebugMessage('Socket.IO library not loaded, loading now...');
+                this.loadSocketIOLibrary();
+                return;
+            }
 
-            this.websocket.onopen = (event) => {
-                clearTimeout(connectionTimer); // Clear timeout on successful connection
-                this.addDebugMessage('✅ WebSocket connection opened - full communication enabled');
+            this.socket = io(this.socketUrl, {
+                transports: ['websocket', 'polling'],
+                timeout: this.connectionTimeout,
+                reconnection: true,
+                reconnectionDelay: this.reconnectDelay,
+                reconnectionAttempts: this.maxReconnectAttempts
+            });
+
+            // Connection event handlers
+            this.socket.on('connect', () => {
                 this.connected = true;
                 this.reconnectAttempts = 0;
+                this.addDebugMessage(`✓ Connected to Socket.IO server (ID: ${this.socket.id})`);
                 this.updateConnectionMode();
                 
-                // Send initial connection message immediately
-                this.sendWebSocketMessage({
-                    type: 'client_connected',
-                    timestamp: Date.now(),
-                    user_agent: navigator.userAgent,
-                    client_type: 'web_interface'
+                // Test connection after connecting
+                setTimeout(() => this.testConnection(), 100);
+            });
+
+            this.socket.on('disconnect', (reason) => {
+                this.connected = false;
+                this.addDebugMessage(`✗ Disconnected from Socket.IO server: ${reason}`);
+                this.updateConnectionMode();
+            });
+
+            this.socket.on('connect_error', (error) => {
+                this.connected = false;
+                this.reconnectAttempts++;
+                this.addDebugMessage(`✗ Connection error: ${error.message} (attempt ${this.reconnectAttempts})`);
+                this.updateConnectionMode();
+            });
+
+            // Message event handlers
+            this.socket.on('welcome', (data) => {
+                this.addDebugMessage(`Welcome message: ${data.message}`);
+                this.updateStatus({
+                    running: true,
+                    version: data.version,
+                    uptime: 0
                 });
+            });
 
-                // Test connection and get initial status
-                setTimeout(() => {
-                    this.testConnection();
-                    this.getStatus();
-                }, 50);
-            };
+            this.socket.on('pong', (data) => {
+                this.addDebugMessage(`Pong received: ${data.timestamp}`);
+            });
 
-            this.websocket.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    this.handleWebSocketMessage(data);
-                } catch (e) {
-                    this.addDebugMessage(`WebSocket parse error: ${e.message}`);
-                }
-            };
-
-            this.websocket.onclose = (event) => {
-                clearTimeout(connectionTimer); // Clear timeout on close
-                this.addDebugMessage(`❌ WebSocket connection closed (code: ${event.code})`);
-                this.connected = false;
-                this.websocket = null;
-                this.updateConnectionMode();
-                
-                // Immediate retry for certain close codes, then progressive delay
-                if (this.reconnectAttempts < this.maxReconnectAttempts) {
-                    this.reconnectAttempts++;
-                    let delay;
-                    
-                    // Immediate retry for server restart (code 1006) or going away (code 1001)
-                    if (event.code === 1006 || event.code === 1001) {
-                        delay = 100; // Almost immediate
-                    } else {
-                        delay = Math.min(500 * this.reconnectAttempts, this.reconnectDelay); // Progressive delay
-                    }
-                    
-                    this.addDebugMessage(`🔄 Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-                    setTimeout(() => {
-                        this.connectWebSocket();
-                    }, delay);
-                } else {
-                    this.addDebugMessage('❌ Max reconnection attempts reached. Please refresh the page.');
-                }
-            };
-
-            this.websocket.onerror = (error) => {
-                this.addDebugMessage(`⚠️ WebSocket connection error: ${error.message || 'Connection failed'}`);
-                this.connected = false;
-                this.updateConnectionMode();
-            };
+            // Response handlers
+            this.setupResponseHandlers();
 
         } catch (error) {
-            this.addDebugMessage(`WebSocket connection failed: ${error.message}`);
+            this.addDebugMessage(`Socket.IO connection error: ${error.message}`);
+            this.updateConnectionMode();
         }
     }
 
-    handleWebSocketMessage(data) {
-        const messageType = data.type || 'unknown';
-        const timestamp = new Date(data.timestamp || Date.now()).toLocaleTimeString();
-        
-        // Handle responses to pending requests
-        if (data.request_id && this.pendingRequests.has(data.request_id)) {
-            const { resolve } = this.pendingRequests.get(data.request_id);
-            this.pendingRequests.delete(data.request_id);
+    loadSocketIOLibrary() {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
+        script.onload = () => {
+            this.addDebugMessage('Socket.IO library loaded');
+            this.connectSocket();
+        };
+        script.onerror = () => {
+            this.addDebugMessage('Failed to load Socket.IO library');
+        };
+        document.head.appendChild(script);
+    }
+
+    setupResponseHandlers() {
+        const responseEvents = [
+            'test_connection_response',
+            'status_response',
+            'keyboard_response',
+            'key_down_response',
+            'key_up_response',
+            'send_key_response',
+            'send_key_batch_response',
+            'routes_response',
+            'unknown_message_response'
+        ];
+
+        responseEvents.forEach(event => {
+            this.socket.on(event, (data) => {
+                this.handleSocketResponse(data);
+            });
+        });
+    }
+
+    handleSocketResponse(data) {
+        this.addDebugMessage(`[DEBUG] Received Socket.IO response: ${data.type || 'unknown'}`);
+        const requestId = data.request_id;
+
+        if (requestId && this.pendingRequests.has(requestId)) {
+            this.addDebugMessage(`[DEBUG] Resolving pending request ${requestId}`);
+            const { resolve } = this.pendingRequests.get(requestId);
+            this.pendingRequests.delete(requestId);
             resolve(data);
-            return;
+        } else {
+            this.addDebugMessage(`[DEBUG] No pending request found for response (request_id: ${requestId})`);
         }
-        
-        // Handle broadcast messages and events
-        switch (messageType) {
-            case 'welcome':
-                this.addDebugMessage(`Server: ${data.message}`);
-                break;
-                
-            case 'key_event':
-            case 'key_down_event':
-            case 'key_up_event':
-                this.addDebugMessage(`Server event: ${messageType} '${data.key}'`);
-                break;
-                
-            case 'status_broadcast':
-                this.updateStats(data.data);
-                break;
-                
-            case 'error':
-                this.addDebugMessage(`Server error: ${data.message || data.error}`);
-                break;
-                
-            default:
-                this.addDebugMessage(`Server message (${messageType}): ${JSON.stringify(data).substring(0, 100)}`);
-        }
+
+        // Log the response
+        this.addDebugMessage(`Response: ${data.type || 'unknown'} - ${data.success ? 'success' : 'error'}`);
     }
 
     startStatusUpdates() {
-        // Get status every 10 seconds
-        setInterval(async () => {
+        setInterval(() => {
             if (this.connected) {
-                await this.getStatus();
+                this.getStatus();
             }
-        }, 10000);
+        }, 5000); // Update every 5 seconds
     }
 
-    updateStatus(isConnected, errorMessage = null) {
-        const statusContent = document.getElementById('status-content');
-        if (statusContent) {
-            if (isConnected) {
-                statusContent.innerHTML = '<p><strong>Status:</strong> <span style="color: green;">✅ Connected via WebSocket</span></p>';
-            } else {
-                const error = errorMessage ? ` (${errorMessage})` : '';
-                statusContent.innerHTML = `<p><strong>Status:</strong> <span style="color: red;">❌ Disconnected${error}</span></p>`;
-            }
+    updateStatus(status) {
+        if (typeof status === 'boolean') {
+            status = { running: status };
         }
+        
+        Object.assign(this.serverStatus, status);
+        this.updateStats();
     }
 
-    updateStats(data) {
-        const updates = {
-            'serverStatus': data.server_running ? 'Running' : 'Stopped',
-            'connectedClients': data.connected_clients || 0,
-            'serverUptime': data.uptime || 0,
-            'keysSent': this.keysSentCount,
-            'keysHeld': this.heldKeys.size
+    updateStats() {
+        const elements = {
+            'serverStatus': this.serverStatus.running ? 'Running' : 'Stopped',
+            'connectedClients': this.serverStatus.connectedClients || 0,
+            'serverUptime': this.serverStatus.uptime || 0,
+            'serverVersion': this.serverStatus.version || 'unknown'
         };
 
-        // Add LED state if available
-        if (data.ros2 && typeof data.ros2.led_state !== 'undefined') {
-            const ledElement = document.getElementById('ledState');
-            if (ledElement) {
-                const isOn = data.ros2.led_state;
-                ledElement.textContent = isOn ? '💡 ON' : '⚫ OFF';
-                ledElement.style.color = isOn ? '#00aa00' : '#666666';
-                ledElement.style.backgroundColor = isOn ? '#e8f5e8' : '#f5f5f5';
-            }
-        }
-
-        for (const [elementId, value] of Object.entries(updates)) {
-            const element = document.getElementById(elementId);
+        Object.entries(elements).forEach(([id, value]) => {
+            const element = document.getElementById(id);
             if (element) {
                 element.textContent = value;
             }
-        }
+        });
     }
 
-    updateKeyDisplay(key, keyCode, isPressed) {
-        const keyDisplay = document.getElementById('keyDisplay');
-        if (keyDisplay) {
-            if (isPressed) {
-                const action = this.getKeyAction(key, keyCode);
-                keyDisplay.innerHTML = `
-                    <div style="border: 2px solid #0066cc; padding: 1rem; margin: 0.5rem 0; background: #f0f8ff;">
-                        <p style="margin: 0; font-size: 1.2em;"><strong>Key: ${key}</strong> (Code: ${keyCode})</p>
-                        <p style="margin: 0.5rem 0 0 0; color: #0066cc;">${action}</p>
-                    </div>
-                `;
+    updateKeyDisplay() {
+        const keys = Array.from(this.heldKeys.keys());
+        const keysText = keys.length > 0 ? keys.join(', ') : 'None';
+
+        // Update the main key display
+        const keyDisplayElement = document.getElementById('keyDisplay');
+        if (keyDisplayElement) {
+            const p = keyDisplayElement.querySelector('p');
+            if (p) {
+                p.innerHTML = keys.length > 0 ?
+                    `<strong>Held Keys: ${keysText}</strong>` :
+                    '<strong>Press and hold any key...</strong>';
             }
         }
+
+        // Update the held keys count in statistics
+        const heldKeysElement = document.getElementById('keysHeld');
+        if (heldKeysElement) {
+            heldKeysElement.textContent = keys.length;
+        }
     }
 
-    getKeyAction(key, keyCode) {
+    getKeyAction(key) {
         const actions = {
-            76: '💡 LED Toggle',           // L
-            87: '🔼 Moving Forward',      // W
-            83: '🔽 Moving Backward',     // S
-            65: '↪️ Turning Left',        // A
-            68: '↩️ Turning Right',       // D
-            70: '🔄 Servo Toggle',        // F
-            108: '💡 LED Toggle'          // l
+            'w': 'Move Forward',
+            's': 'Move Backward', 
+            'a': 'Turn Left',
+            'd': 'Turn Right',
+            'f': 'Toggle Servo',
+            'l': 'Toggle LED'
         };
-        return actions[keyCode] || '⏹️ Stop Movement';
+        return actions[key] || 'Unknown';
     }
 
     updateKeysSentDisplay() {
@@ -525,150 +471,83 @@ class WebSocketKeyboardInterface {
     }
 
     updateConnectionMode() {
-        const modeIndicator = document.getElementById('connectionMode');
-        if (modeIndicator) {
-            if (this.connected) {
-                modeIndicator.textContent = 'WebSocket (Real-time)';
-                modeIndicator.style.color = '#008000';
-            } else {
-                modeIndicator.textContent = 'WebSocket (Connecting...)';
-                modeIndicator.style.color = '#FFA500';
-            }
+        const statusElement = document.getElementById('status-content');
+        if (statusElement) {
+            const status = this.connected ? 'Connected' : 'Disconnected';
+            const color = this.connected ? '#008000' : '#FF0000';
+            statusElement.innerHTML = `<p><strong>Status:</strong> <span style="color: ${color};">${status}</span></p>`;
         }
     }
 
     addDebugMessage(message) {
         const timestamp = new Date().toLocaleTimeString();
-        const liveEventsDiv = document.getElementById('live-events');
-        
-        if (liveEventsDiv) {
-            const messageElement = document.createElement('div');
-            messageElement.style.cssText = 'padding: 0.25rem; border-bottom: 1px solid #eee; font-size: 0.9em;';
-            messageElement.innerHTML = `<span style="color: #666;">[${timestamp}]</span> ${message}`;
-            
-            liveEventsDiv.appendChild(messageElement);
-            
+        const formattedMessage = `[${timestamp}] ${message}`;
+
+        const debugElement = document.getElementById('debugMessages');
+        if (debugElement) {
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = formattedMessage;
+            debugElement.appendChild(messageDiv);
+
             // Keep only last 50 messages
-            while (liveEventsDiv.children.length > 50) {
-                liveEventsDiv.removeChild(liveEventsDiv.firstChild);
+            while (debugElement.children.length > 50) {
+                debugElement.removeChild(debugElement.firstChild);
             }
-            
-            // Auto-scroll to bottom
-            liveEventsDiv.scrollTop = liveEventsDiv.scrollHeight;
+
+            // Scroll to bottom
+            debugElement.scrollTop = debugElement.scrollHeight;
         }
-        
-        console.log(`[${timestamp}] ${message}`);
+
+        console.log(formattedMessage);
     }
 
     clearMessages() {
-        const liveEventsDiv = document.getElementById('live-events');
-        if (liveEventsDiv) {
-            liveEventsDiv.innerHTML = '';
+        const debugElement = document.getElementById('debugMessages');
+        if (debugElement) {
+            debugElement.innerHTML = '';
         }
-        this.addDebugMessage('Debug messages cleared');
     }
 
     async sendTestKeys() {
-        this.addDebugMessage('Sending test key sequence...');
-        
-        const testKeys = [
-            { key: 'W', code: 87, name: 'Forward' },
-            { key: 'S', code: 83, name: 'Backward' },
-            { key: 'A', code: 65, name: 'Left' },
-            { key: 'D', code: 68, name: 'Right' }
-        ];
-        
-        for (const testKey of testKeys) {
-            this.addDebugMessage(`Testing ${testKey.name}...`);
-            await this.sendKey(testKey.key, testKey.code);
-            await new Promise(resolve => setTimeout(resolve, 500));
+        const testKeys = ['w', 'a', 's', 'd'];
+        for (const key of testKeys) {
+            await this.sendKey(key, key.charCodeAt(0));
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
-        
-        this.addDebugMessage('Test key sequence completed');
     }
 
     async toggleLED() {
-        this.addDebugMessage('Toggling LED...');
-        await this.sendKey('L', 76);
-        this.addDebugMessage('LED toggle command sent');
+        return await this.sendKey('l', 108);
     }
 
     cleanup() {
-        // Clear all held keys
-        this.heldKeys.clear();
-        
-        // Close WebSocket connection
-        if (this.websocket) {
-            this.websocket.close();
-            this.websocket = null;
+        if (this.socket) {
+            this.socket.disconnect();
+            this.connected = false;
         }
         
-        // Clear pending requests
+        // Clear any pending requests
         this.pendingRequests.clear();
+        this.heldKeys.clear();
     }
 
-    // Manual form submission handlers (for backward compatibility)
-    async submitManualKeyForm(formData) {
-        const key = formData.get('key');
-        const keyCode = parseInt(formData.get('key_code'));
-        const isHeld = formData.get('is_held') === 'true';
+    async submitManualKeyForm(event) {
+        event.preventDefault();
+        const key = document.getElementById('manual-key')?.value || '';
+        const keyCode = parseInt(document.getElementById('manual-key-code')?.value) || key.charCodeAt(0);
         
-        const result = await this.sendKey(key, keyCode, isHeld);
-        
-        return {
-            success: result,
-            message: result ? `Key '${key}' sent successfully` : `Failed to send key '${key}'`
-        };
+        const result = await this.sendKey(key, keyCode);
+        this.addDebugMessage(`Manual key result: ${JSON.stringify(result)}`);
     }
 
-    async submitBatchKeyForm(formData) {
-        const keysInput = formData.get('keys_input');
+    async submitBatchKeyForm(event) {
+        event.preventDefault();
+        const keysInput = document.getElementById('batch-keys')?.value || '';
         
         const result = await this.sendKeyBatch(keysInput);
-        
-        return {
-            success: result.success,
-            message: result.success ? 
-                `Batch processed: ${result.processed_count} keys` : 
-                `Batch failed: ${result.error}`
-        };
+        this.addDebugMessage(`Batch keys result: ${JSON.stringify(result)}`);
     }
 }
 
-// Global instance
-let keyboardInterface;
-
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    keyboardInterface = new WebSocketKeyboardInterface();
-    
-    // Make functions available globally for button onclick handlers
-    window.testConnection = () => keyboardInterface.testConnection();
-    window.getStatus = () => keyboardInterface.getStatus();
-    window.clearMessages = () => keyboardInterface.clearMessages();
-    window.sendTestKeys = () => keyboardInterface.sendTestKeys();
-    window.toggleLED = () => keyboardInterface.toggleLED();
-    
-    // Handle manual form submissions
-    window.submitManualKey = async (event) => {
-        event.preventDefault();
-        const formData = new FormData(event.target);
-        const result = await keyboardInterface.submitManualKeyForm(formData);
-        
-        const resultDiv = document.getElementById('manual-result');
-        if (resultDiv) {
-            resultDiv.innerHTML = `<p style="color: ${result.success ? 'green' : 'red'};">${result.message}</p>`;
-        }
-    };
-    
-    window.submitBatchKey = async (event) => {
-        event.preventDefault();
-        const formData = new FormData(event.target);
-        const result = await keyboardInterface.submitBatchKeyForm(formData);
-        
-        const resultDiv = document.getElementById('batch-result');
-        if (resultDiv) {
-            resultDiv.innerHTML = `<p style="color: ${result.success ? 'green' : 'red'};">${result.message}</p>`;
-        }
-    };
-});
+// Make class globally available
+window.SocketIOKeyboardInterface = SocketIOKeyboardInterface;
