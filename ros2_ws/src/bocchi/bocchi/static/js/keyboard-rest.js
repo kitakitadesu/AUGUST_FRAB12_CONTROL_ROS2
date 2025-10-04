@@ -5,7 +5,7 @@
 
 class RESTKeyboardInterface {
     constructor() {
-        this.baseUrl = `${window.location.protocol}//${window.location.hostname}:8080`;
+        this.baseUrl = `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
         this.connected = false;
         this.keysSentCount = 0;
         this.heldKeys = new Map();
