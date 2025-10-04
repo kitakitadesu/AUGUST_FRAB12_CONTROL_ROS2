@@ -12,7 +12,8 @@ import operator
     <!-- Enhanced CSS with IBM Plex Sans fonts -->
     <link rel="stylesheet" href="/static/css/main.css">
     
-    <!-- WebSocket-only communication - no HTMX needed -->
+    <!-- Socket.IO library -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     <main id="main-content">
@@ -40,12 +41,12 @@ import operator
                         </p>
                         <div style="text-align: center;">
                             <select id="communicationMode" onchange="switchCommunicationMode(this.value)" style="padding: 0.25rem; font-size: 1em;">
-                                <option value="websocket">WebSocket (Real-time)</option>
+                                <option value="socketio">Socket.IO (Real-time)</option>
                                 <option value="rest">REST API (Fallback)</option>
                             </select>
                         </div>
                         <p id="modeDescription" style="margin: 0.25rem 0 0 0; text-align: center; font-size: 0.9em; color: #666;">
-                            WebSocket provides real-time keyboard control with lower latency
+                            Socket.IO provides real-time keyboard control with automatic reconnection
                         </p>
                     </div>
 
@@ -62,7 +63,7 @@ import operator
                     <div style="border: 1px solid #666; padding: 0.5rem; margin-top: 0.5rem; background: #f8f8f8;">
                         <p style="margin: 0; text-align: center;">
                             <strong>Current Mode:</strong>
-                            <span id="connectionMode" style="color: #0066cc; font-weight: bold;">WebSocket</span>
+                            <span id="connectionMode" style="color: #0066cc; font-weight: bold;">Socket.IO</span>
                         </p>
                         <p id="connectionDescription" style="margin: 0.25rem 0 0 0; text-align: center; font-size: 0.9em; color: #666;">
                             Real-time bidirectional communication
@@ -92,12 +93,12 @@ import operator
                     <div style="border: 1px dotted #ccc; padding: 0.5rem;">
                         <ol>
                             <li>Click anywhere on this page to focus it</li>
-                            <li><strong>Press and hold</strong> any key - it will send via WebSocket for real-time control</li>
+                            <li><strong>Press and hold</strong> any key - it will send via Socket.IO for real-time control</li>
                             <li><strong>Release</strong> the key to stop sending</li>
                             <li>Press 'q' to quit the publisher</li>
                             <li>Multiple keys can be held simultaneously</li>
-                            <li><strong>WebSocket mode:</strong> Real-time control with instant response</li>
-                            <li><strong>REST API mode:</strong> Fallback when WebSocket is unavailable</li>
+                            <li><strong>Socket.IO mode:</strong> Real-time control with automatic reconnection</li>
+                            <li><strong>REST API mode:</strong> Fallback when Socket.IO is unavailable</li>
                         </ol>
                     </div>
                     
@@ -216,7 +217,7 @@ import operator
                 <!-- Live Events -->
                 <h3 style="margin: 1rem 0 0.5rem 0; border-bottom: 1px solid #ccc; padding-bottom: 0.25rem;">Live Events</h3>
                 <div id="live-events" style="border: 1px solid #ccc; padding: 0.5rem; height: 200px; overflow-y: auto; font-size: 0.8em; background: #fafafa;">
-                    <div style="color: #666; font-style: italic;">WebSocket events will appear here...</div>
+                    <div style="color: #666; font-style: italic;">Socket.IO events will appear here...</div>
                 </div>
             </aside>
 
@@ -252,7 +253,7 @@ import operator
                             <tr>
                                 <td colspan="2" style="text-align: center; padding-top: 0.5rem;">
                                     <button type="submit" style="padding: 0.5rem 1rem;">
-                                        <strong>Send Key via WebSocket</strong>
+                                        <strong>Send Key via Socket.IO</strong>
                                     </button>
                                 </td>
                             </tr>
@@ -275,7 +276,7 @@ import operator
                         </div>
                         <div style="text-align: center;">
                             <button type="submit" style="padding: 0.5rem 1rem;">
-                                <strong>Send Batch via WebSocket</strong>
+                                <strong>Send Batch via Socket.IO</strong>
                             </button>
                         </div>
                     </fieldset>
@@ -288,14 +289,14 @@ import operator
         <!-- Information Sections -->
         <div class="grid-3col">
             
-            <!-- WebSocket Communication -->
+            <!-- Socket.IO Communication -->
             <section style="border: 2px solid #666; padding: 1rem;">
-                <h2 style="margin-top: 0; border-bottom: 1px solid #ccc; padding-bottom: 0.5rem;">WebSocket Message Types</h2>
+                <h2 style="margin-top: 0; border-bottom: 1px solid #ccc; padding-bottom: 0.5rem;">Socket.IO Events</h2>
                 <div style="border: 1px solid #999; padding: 0.5rem;">
                     <table border="1" cellpadding="8" cellspacing="0" style="width: 100%;">
                         <thead>
                             <tr style="background: #f0f0f0;">
-                                <th>Message Type</th>
+                                <th>Event Name</th>
                                 <th>Direction</th>
                                 <th>Description</th>
                             </tr>
@@ -348,12 +349,12 @@ import operator
                     <dl style="margin: 0;">
                         <dt><strong>Current Host:</strong></dt>
                         <dd style="margin-bottom: 0.5rem;">${current_host or 'localhost'}</dd>
-                        <dt><strong>WebSocket URL:</strong></dt>
-                        <dd style="margin-bottom: 0.5rem;">ws://${current_host or 'localhost'}:8765</dd>
+                        <dt><strong>Socket.IO URL:</strong></dt>
+                        <dd style="margin-bottom: 0.5rem;">http://${current_host or 'localhost'}:8080</dd>
                         <dt><strong>Web Interface URL:</strong></dt>
                         <dd style="margin-bottom: 0.5rem;">${web_url or 'http://localhost:5000'}</dd>
                         <dt><strong>Communication Mode:</strong></dt>
-                        <dd style="color: #0066cc; font-weight: bold;">WebSocket Only (Real-time)</dd>
+                        <dd style="color: #0066cc; font-weight: bold;">Socket.IO Only (Real-time)</dd>
                     </dl>
                 </div>
 
@@ -374,14 +375,15 @@ import operator
         <!-- Additional Information Section -->
         <div style="border: 2px solid #666; padding: 1rem; margin-bottom: 1rem;">
             
-            <!-- WebSocket Protocol Details -->
+            <!-- Socket.IO Protocol Details -->
             <details style="border: 1px solid #999; padding: 0.5rem; margin-bottom: 1rem;">
-                <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem;">WebSocket Protocol Details</summary>
+                <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem;">Socket.IO Protocol Details</summary>
                 <div style="margin-top: 0.5rem; padding: 0.5rem; background: #f8f8f8;">
-                    <h4>Message Format:</h4>
-                    <pre style="background: #fff; padding: 0.5rem; border: 1px solid #ddd; overflow-x: auto;">{
-  "type": "key_down",
-  "key": "W",
+                    <h4>Event Format:</h4>
+                    <pre style="background: #fff; padding: 0.5rem; border: 1px solid #ddd; overflow-x: auto;">// Event: 'key_down'
+// Data:
+{
+  "key": "w",
   "key_code": 87,
   "timestamp": 1640995200000,
   "request_id": 123
@@ -472,8 +474,8 @@ import operator
                                         <td><code>http://localhost:5000</code></td>
                                     </tr>
                                     <tr>
-                                        <td><strong>WebSocket</strong></td>
-                                        <td><code>ws://localhost:8765</code></td>
+                                        <td><strong>Socket.IO</strong></td>
+                                        <td><code>http://localhost:8080</code></td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -495,7 +497,7 @@ import operator
     <!-- JavaScript -->
     <script>
         // Global variables for mode switching
-        let currentMode = 'websocket';
+        let currentMode = 'socketio';
         let keyboardInterface = null;
 
         // Mode switching function
@@ -507,12 +509,12 @@ import operator
             const statusContent = document.getElementById('status-content');
 
             // Update UI descriptions
-            if (mode === 'websocket') {
-                modeDescription.textContent = 'WebSocket provides real-time keyboard control with lower latency';
-                connectionMode.textContent = 'WebSocket';
+            if (mode === 'socketio') {
+                modeDescription.textContent = 'Socket.IO provides real-time keyboard control with automatic reconnection';
+                connectionMode.textContent = 'Socket.IO';
                 connectionMode.style.color = '#008000';
-                connectionDescription.textContent = 'Real-time bidirectional communication';
-                statusContent.innerHTML = '<p><strong>Status:</strong> Connecting to WebSocket server...</p>';
+                connectionDescription.textContent = 'Real-time bidirectional communication with auto-reconnect';
+                statusContent.innerHTML = '<p><strong>Status:</strong> Connecting to Socket.IO server...</p>';
             } else {
                 modeDescription.textContent = 'REST API provides reliable communication with request/response pattern';
                 connectionMode.textContent = 'REST API';
@@ -533,22 +535,44 @@ import operator
             }
 
             // Load appropriate JavaScript based on mode
-            if (mode === 'websocket') {
-                // For WebSocket mode, load keyboard.js
+            if (mode === 'socketio') {
+                // For Socket.IO mode, load keyboard.js
                 if (!document.querySelector('script[src="/static/js/keyboard.js"]')) {
                     const script = document.createElement('script');
                     script.src = '/static/js/keyboard.js';
                     script.onload = function() {
-                        // Initialize WebSocket interface
-                        if (window.WebSocketKeyboardInterface) {
-                            keyboardInterface = new WebSocketKeyboardInterface();
+                        // Initialize Socket.IO interface
+                        if (window.SocketIOKeyboardInterface) {
+                            keyboardInterface = new SocketIOKeyboardInterface();
+
+                            // Make functions available globally for button onclick handlers
+                            window.testConnection = () => keyboardInterface.testConnection();
+                            window.getStatus = () => keyboardInterface.getStatus();
+                            window.clearMessages = () => keyboardInterface.clearMessages();
+                            window.sendTestKeys = () => keyboardInterface.sendTestKeys();
+                            window.toggleLED = () => keyboardInterface.toggleLED();
+
+                            // Handle manual form submissions
+                            window.submitManualKey = (event) => keyboardInterface.submitManualKeyForm(event);
+                            window.submitBatchKey = (event) => keyboardInterface.submitBatchKeyForm(event);
                         }
                     };
                     document.head.appendChild(script);
                 } else {
                     // Script already loaded, reinitialize
-                    if (window.WebSocketKeyboardInterface) {
-                        keyboardInterface = new WebSocketKeyboardInterface();
+                    if (window.SocketIOKeyboardInterface) {
+                        keyboardInterface = new SocketIOKeyboardInterface();
+
+                        // Make functions available globally for button onclick handlers
+                        window.testConnection = () => keyboardInterface.testConnection();
+                        window.getStatus = () => keyboardInterface.getStatus();
+                        window.clearMessages = () => keyboardInterface.clearMessages();
+                        window.sendTestKeys = () => keyboardInterface.sendTestKeys();
+                        window.toggleLED = () => keyboardInterface.toggleLED();
+
+                        // Handle manual form submissions
+                        window.submitManualKey = (event) => keyboardInterface.submitManualKeyForm(event);
+                        window.submitBatchKey = (event) => keyboardInterface.submitBatchKeyForm(event);
                     }
                 }
             } else {
@@ -590,8 +614,8 @@ import operator
             document.body.tabIndex = -1;
             document.body.focus();
 
-            // Initialize with default WebSocket mode
-            switchCommunicationMode('websocket');
+            // Initialize with default Socket.IO mode
+            switchCommunicationMode('socketio');
         });
     </%text>
     </script>
