@@ -133,7 +133,7 @@ jobs:
         if [ -f requirements.txt ]; then
           pip3 install -r requirements.txt
         fi
-        pip3 install "Flask==2.3.3" "Flask-CORS==4.0.0" "Werkzeug==2.3.7" "websockets==11.0.3" "requests==2.31.0" "Mako==1.2.4" pytest-cov
+        pip3 install "Flask==2.3.3" "Flask-CORS==4.0.0" "Werkzeug==2.3.7" "python-socketio==5.9.0" "eventlet==0.33.3" "requests==2.31.0" "Mako==1.2.4" pytest-cov
         
     - name: Install ROS2 dependencies
       run: |
